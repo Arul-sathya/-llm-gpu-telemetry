@@ -1,0 +1,52 @@
+global:
+  scrape_interval:     5s   # scrape every 5 seconds
+  evaluation_interval: 5s
+  scrape_timeout:      4s
+
+# ── Alerting (optional, wire up Alertmanager later) ───────────────
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+# ── Scrape Jobs ───────────────────────────────────────────────────
+scrape_configs:
+
+  # DCGM GPU hardware metrics
+  - job_name: 'dcgm'
+    static_configs:
+      - targets: ['dcgm-exporter:9400']
+    metric_relabel_configs:
+      # Keep only the metrics defined in dcgm-metrics.csv
+      - source_labels: [__name__]
+        regex: 'DCGM_FI_.*'
+        action: keep
+      # Add gpu_id label from the exported uuid label for readability
+      - source_labels: [gpu]
+        target_label: gpu_id
+
+  # vLLM inference server metrics
+  - job_name: 'vllm'
+    static_configs:
+      - targets: ['vllm:8000']
+    metrics_path: /metrics
+    metric_relabel_configs:
+      # Keep all vllm: prefixed metrics
+      - source_labels: [__name__]
+        regex: 'vllm:.*'
+        action: keep
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Host system metrics
+  - job_name: 'node'
+    static_configs:
+      - targets: ['localhost:9100']
+
+# ── Recording Rules ───────────────────────────────────────────────
+# Pre-compute expensive queries so Grafana panels load fast
+rule_files:
+  - '/etc/prometheus/rules.yml'

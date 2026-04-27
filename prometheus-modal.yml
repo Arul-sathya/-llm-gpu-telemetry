@@ -1,0 +1,46 @@
+# prometheus-modal.yml
+# Prometheus config for Mac setup.
+# Scrapes vLLM and GPU metrics from Modal endpoints.
+#
+# After `modal deploy modal_app.py`, update the targets below
+# with your actual Modal URLs.
+# They look like: https://your-username--gpuwatch-vllm-server.modal.run
+
+global:
+  scrape_interval:     5s
+  evaluation_interval: 5s
+  scrape_timeout:      4s
+
+rule_files:
+  - '/etc/prometheus/rules.yml'
+
+scrape_configs:
+
+  # ── Modal vLLM metrics ───────────────────────────────────────────
+  # vLLM exposes Prometheus metrics at /metrics
+  - job_name: 'vllm'
+    scheme: https
+    static_configs:
+      - targets: ['arul10sathya--gpuwatch-vllm-server.modal.run']
+    metrics_path: /metrics
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'vllm:.*'
+        action: keep
+
+  # ── Modal GPU metrics ────────────────────────────────────────────
+  # nvidia-smi exporter running on same Modal container
+  - job_name: 'gpu'
+    scheme: https
+    static_configs:
+      - targets: ['arul10sathya--gpuwatch-metrics-server.modal.run']
+    metrics_path: /metrics
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'DCGM_FI_.*'
+        action: keep
+
+  # ── Prometheus self-monitoring ───────────────────────────────────
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

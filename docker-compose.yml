@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+
+  # ── NVIDIA DCGM Exporter ─────────────────────────────────────────
+  # Scrapes GPU hardware counters and exposes them as Prometheus metrics
+  # Needs privileged access + nvidia runtime
+  dcgm-exporter:
+    image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.5-3.4.0-ubuntu22.04
+    runtime: nvidia
+    restart: unless-stopped
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - DCGM_EXPORTER_INTERVAL=5000        # scrape every 5 seconds
+      - DCGM_EXPORTER_COLLECTORS=/etc/dcgm-exporter/gpuwatch-metrics.csv
+    ports:
+      - "9400:9400"
+    cap_add:
+      - SYS_ADMIN
+    volumes:
+      - ./dcgm-metrics.csv:/etc/dcgm-exporter/gpuwatch-metrics.csv
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9400/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── vLLM Inference Server ────────────────────────────────────────
+  # Serves TinyLlama with native Prometheus metrics enabled
+  vllm:
+    image: vllm/vllm-openai:latest
+    runtime: nvidia
+    restart: unless-stopped
+    command: >
+      --model TinyLlama/TinyLlama-1.1B-Chat-v1.0
+      --max-model-len 2048
+      --enable-metrics
+      --disable-log-requests
+    ports:
+      - "8000:8000"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_HOME=/root/.cache/huggingface
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Prometheus ───────────────────────────────────────────────────
+  # Scrapes DCGM + vLLM metrics every 5s, retains 15 days
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - dcgm-exporter
+      - vllm
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── Grafana ──────────────────────────────────────────────────────
+  # Dashboard + annotation support for anomaly detector alerts
+  grafana:
+    image: grafana/grafana:10.4.0
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── Node Exporter ────────────────────────────────────────────────
+  # Host CPU/RAM/disk metrics for system context alongside GPU metrics
+  node-exporter:
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
+
+volumes:
+  hf-cache:
+  prometheus-data:
+  grafana-data:

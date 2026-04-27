@@ -1,0 +1,222 @@
+{
+  "title": "GPUWatch — Inference Fleet Telemetry",
+  "uid": "gpuwatch-v1",
+  "refresh": "5s",
+  "time": { "from": "now-30m", "to": "now" },
+  "timezone": "browser",
+  "panels": [
+
+    {
+      "id": 1,
+      "title": "SM Clock vs P95 TTFT — Core Correlation Panel",
+      "description": "The critical overlay. SM clock drop (left axis) precedes TTFT spike (right axis) by ~45s. This lag is the prediction window.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 2 } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "P95 TTFT (ms)" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
+              { "id": "unit", "value": "ms" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "SM Clock (MHz)" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } },
+              { "id": "unit", "value": "MHz" }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "DCGM_FI_DEV_SM_CLOCK",
+          "legendFormat": "SM Clock (MHz)"
+        },
+        {
+          "expr": "gpuwatch:ttft_p95_ms",
+          "legendFormat": "P95 TTFT (ms)"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+
+    {
+      "id": 2,
+      "title": "GPU Temperature (°C)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 8, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 75 },
+              { "color": "red", "value": 83 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "DCGM_FI_DEV_GPU_TEMP", "legendFormat": "GPU {{gpu}}" }
+      ]
+    },
+
+    {
+      "id": 3,
+      "title": "Power Draw (W)",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 8, "w": 8, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "watt" }
+      },
+      "targets": [
+        { "expr": "DCGM_FI_DEV_POWER_USAGE", "legendFormat": "GPU {{gpu}}" }
+      ]
+    },
+
+    {
+      "id": 4,
+      "title": "SM Clock Ratio (1.0 = healthy)",
+      "description": "SM clock as fraction of 5-min max. Below 0.92 = throttled.",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 8, "w": 8, "h": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0.8,
+          "max": 1.05,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.92 },
+              { "color": "green", "value": 0.98 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "gpuwatch:sm_clock_ratio", "legendFormat": "GPU {{gpu}}" }
+      ]
+    },
+
+    {
+      "id": 5,
+      "title": "Tensor Core Utilization (%)",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 14, "w": 6, "h": 5 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.3 },
+              { "color": "green", "value": 0.6 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "avg(DCGM_FI_PROF_PIPE_TENSOR_ACTIVE)", "legendFormat": "Tensor Active" }
+      ]
+    },
+
+    {
+      "id": 6,
+      "title": "GPU Memory Used",
+      "type": "bargauge",
+      "gridPos": { "x": 6, "y": 14, "w": 6, "h": 5 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decmbytes",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 18000 },
+              { "color": "red", "value": 22000 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "DCGM_FI_DEV_FB_USED", "legendFormat": "GPU {{gpu}}" }
+      ]
+    },
+
+    {
+      "id": 7,
+      "title": "vLLM Request Queue Depth",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 14, "w": 6, "h": 5 },
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      },
+      "targets": [
+        { "expr": "vllm:num_requests_waiting", "legendFormat": "Waiting" },
+        { "expr": "vllm:num_requests_running", "legendFormat": "Running" }
+      ]
+    },
+
+    {
+      "id": 8,
+      "title": "Token Throughput (tok/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 18, "y": 14, "w": 6, "h": 5 },
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      },
+      "targets": [
+        { "expr": "gpuwatch:token_throughput", "legendFormat": "Generation tok/s" }
+      ]
+    },
+
+    {
+      "id": 9,
+      "title": "Temperature Rate of Change (°C/min)",
+      "description": "Rising slope before visible throttle. A key early feature for the anomaly detector.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 19, "w": 12, "h": 5 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 1, "fillOpacity": 20 },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "gpuwatch:temp_slope", "legendFormat": "Temp slope GPU {{gpu}}" }
+      ]
+    },
+
+    {
+      "id": 10,
+      "title": "PCIe Bandwidth (MB/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 19, "w": 12, "h": 5 },
+      "fieldConfig": {
+        "defaults": { "unit": "decMbytes" }
+      },
+      "targets": [
+        { "expr": "rate(DCGM_FI_PROF_PCIE_TX_BYTES[30s]) / 1e6", "legendFormat": "TX GPU {{gpu}}" },
+        { "expr": "rate(DCGM_FI_PROF_PCIE_RX_BYTES[30s]) / 1e6", "legendFormat": "RX GPU {{gpu}}" }
+      ]
+    }
+
+  ]
+}
