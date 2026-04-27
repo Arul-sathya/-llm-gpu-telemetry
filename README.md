@@ -1,121 +1,136 @@
-# GPUWatch
+# FinAgent 🤖📈
+### Agentic RAG System for SEC Filing Intelligence
 
-GPU fleet telemetry and predictive throttle detection for LLM inference.
+A production-grade financial analyst AI that reasons over SEC 10-K/10-Q filings to answer questions, extract quantitative signals, compare companies, and backtest NLP sentiment signals against stock returns.
 
-Scrapes NVIDIA DCGM hardware counters from a multi-GPU vLLM cluster,
-correlates them with inference SLOs (TTFT, throughput, queue depth),
-and runs an anomaly detector that flags thermal throttling events
-~45 seconds before they degrade latency.
+---
+
+## What is RAG?
+
+**RAG (Retrieval-Augmented Generation)** is a technique that grounds an LLM's answers in real documents rather than relying on its training data alone.
 
 ```
-[Locust] → [vLLM (TinyLlama)] ← inference layer
-                  |
-        [Prometheus Metrics]
-             /         \
-  [DCGM Exporter]   [vLLM /metrics]
-  (GPU hardware)    (inference SLOs)
-             \         /
-          [Prometheus DB]
-                  |
-         [Grafana Dashboard]
-                  |
-       [Anomaly Detector (FastAPI)]
-       Isolation Forest on DCGM time-series
+Without RAG:  Question → LLM (guesses from memory) → Answer
+With RAG:     Question → Fetch relevant documents → LLM reads them → Grounded Answer
 ```
 
-## Results
+Instead of hallucinating financial figures, the model retrieves actual text from Apple's 10-K and answers based on what's written there — with citations.
 
-| Metric | Value |
-|--------|-------|
-| Throttle prediction lead time | ~45 seconds |
-| Anomaly detector recall | _update after training_ |
-| Anomaly detector precision | _update after training_ |
-| DCGM metrics scraped | 8 hardware counters |
-| Scrape interval | 5 seconds |
+---
+
+## What makes FinAgent *agentic*?
+
+Basic RAG does one thing: embed → retrieve → answer. FinAgent goes further — it uses an **LLM agent loop** that plans and executes multiple steps:
+
+```
+User question
+    ↓
+Agent plans: "I should search filings, then extract signals"
+    ↓
+Tool: search_filings(query="revenue growth", tickers=["AAPL"])
+    ↓
+Tool: extract_signals(ticker="AAPL")
+    ↓
+Tool: compare_companies(topic="AI investment", tickers=["AAPL","NVDA"])
+    ↓
+Tool: final_answer("Based on filings from...")
+```
+
+1. **Plans** its approach before retrieving anything
+2. **Chooses tools** dynamically based on the question
+3. **Iterates** — uses results from one step to inform the next
+4. **Synthesizes** a final answer with filing citations
+
+---
+
+## Features
+
+| Feature | Description |
+|---|---|
+| **Agentic planning** | LLM decides which tools to call and in what order |
+| **Multi-company RAG** | Compare Apple, Nvidia, Microsoft, Tesla, Meta in one query |
+| **Signal extraction** | Structured JSON: revenue, margins, EPS from raw filing text |
+| **Contradiction detection** | Find where management changed their narrative over time |
+| **Sentiment backtest** | Correlate filing sentiment scores with 30-day post-earnings returns |
+| **Streamlit UI** | Full web interface with charts, tables, and query history |
+
+---
 
 ## Stack
 
-| Component | Role |
-|-----------|------|
-| DCGM Exporter | GPU hardware counter scraping |
-| vLLM | LLM inference server (TinyLlama) |
-| Prometheus | Metrics storage + recording rules |
-| Grafana | Dashboard + alert annotations |
-| Locust | Synthetic load generation |
-| Isolation Forest | Anomaly detection on DCGM time-series |
-| FastAPI | Real-time prediction service |
+| Layer | Technology | Cost |
+|---|---|---|
+| LLM | Groq `llama-3.1-8b-instant` | Free (100k tokens/day) |
+| Embeddings | `sentence-transformers/all-MiniLM-L6-v2` | Free (runs locally) |
+| Vector DB | FAISS | Free (runs locally) |
+| Filing data | SEC EDGAR API | Free (public) |
+| Market data | yfinance | Free |
+| UI | Streamlit | Free |
 
-## Quick Start
+**Total cost to run: $0**
+
+---
+
+## Run locally
 
 ```bash
-# 1. Start the full stack
-docker compose up -d
+# 1. Clone the repo
+git clone https://github.com/YOUR_USERNAME/finagent.git
+cd finagent
 
-# 2. Wait ~60s for vLLM to load the model, then verify
-python verify_stack.py
+# 2. Create virtual environment
+python3 -m venv venv
+source venv/bin/activate        # Mac/Linux
+venv\Scripts\activate           # Windows
 
-# 3. Open Grafana dashboard
-open http://localhost:3000
+# 3. Install dependencies
+pip install -r requirements.txt
 
-# 4. Start load generator
-pip install locust
-locust -f locustfile.py --host http://localhost:8000 --users 50 --spawn-rate 5
-
-# 5. Watch SM Clock drop as GPU heats up under load
-# The SM Clock vs P95 TTFT panel shows the core correlation
+# 4. Run
+streamlit run app.py
 ```
 
-**No local GPU?** Use the nvidia-smi fallback:
-```bash
-# Instead of DCGM Exporter, run this in your GPU container
-python nvidia_smi_exporter.py
-# Exposes same metric names on port 9400
-```
+Open http://localhost:8501, enter your free [Groq API key](https://console.groq.com), load tickers, and ask questions.
 
-## DCGM Metrics Reference
+---
 
-| Field ID | What It Measures | Why It Matters |
-|----------|-----------------|----------------|
-| `DCGM_FI_DEV_SM_CLOCK` | SM clock frequency (MHz) | Primary throttle signal — drops first |
-| `DCGM_FI_DEV_GPU_TEMP` | GPU temperature (°C) | Throttle begins at ~83°C on A10G |
-| `DCGM_FI_DEV_POWER_USAGE` | Power draw (W) | Pre-throttle if sustained near TDP |
-| `DCGM_FI_DEV_FB_USED` | VRAM used (MiB) | KV cache pressure in vLLM |
-| `DCGM_FI_DEV_MEM_CLOCK` | Memory clock (MHz) | Memory bandwidth saturation |
-| `DCGM_FI_PROF_PIPE_TENSOR_ACTIVE` | Tensor core active ratio | Real MFU proxy |
-| `DCGM_FI_PROF_PCIE_TX_BYTES` | PCIe TX throughput | Host-device transfer bottleneck |
-| `DCGM_FI_PROF_NVLINK_TX_BYTES` | NVLink bandwidth | Multi-GPU communication (if applicable) |
+## Deploy to Hugging Face Spaces (free)
 
-## Repository Structure
+1. Create a new Space at https://huggingface.co/spaces
+2. Select **Streamlit** as the SDK
+3. Upload `app.py`, `rag_engine.py`, `requirements.txt`
+4. Add `GROQ_API_KEY` as a Space secret
+5. Done — get a public shareable URL
 
-```
-gpuwatch/
-  docker-compose.yml        Full stack: DCGM + vLLM + Prometheus + Grafana
-  prometheus.yml            Scrape config (5s interval)
-  rules.yml                 Recording rules (SM clock ratio, TTFT, etc.)
-  dcgm-metrics.csv          Custom DCGM field selection
-  grafana-datasources.yml   Grafana Prometheus datasource
-  locustfile.py             Load generator (diurnal + spike + heavy patterns)
-  nvidia_smi_exporter.py    Fallback GPU exporter for Modal/restricted envs
-  verify_stack.py           Post-startup health check script
-  collect_metrics.py        Prometheus -> CSV for training data (Weekend 2)
-  features.py               Feature engineering pipeline (Weekend 2)
-  train.py                  Isolation Forest training (Weekend 2)
-  detector.py               FastAPI prediction service (Weekend 2)
-  dashboards/
-    gpuwatch.json           Grafana dashboard (importable)
-  results/
-    classification_report.txt
-    lag_correlation.png
-```
+---
 
-## GPU Rental Options
+## Supported companies
 
-| Platform | GPU | $/hr | DCGM Support |
-|----------|-----|------|--------------|
-| Modal | A10G | ~$1.10 (free tier: $30/mo) | Use nvidia_smi_exporter.py |
-| Vast.ai | RTX 3090 | ~$0.25 | Full (root access) |
-| Vast.ai | A10G | ~$0.45 | Full (root access) |
-| RunPod | A10G | ~$0.54 | Full |
-| Lambda Labs | A10G | $0.75 | Full |
+| Ticker | Company |
+|---|---|
+| AAPL | Apple Inc. |
+| MSFT | Microsoft Corp. |
+| NVDA | Nvidia Corp. |
+| TSLA | Tesla Inc. |
+| META | Meta Platforms |
+| GOOGL | Alphabet Inc. |
+| AMZN | Amazon.com Inc. |
 
-Total estimated cost to build: **under $15**.
+---
+
+## Agent tools
+
+| Tool | What it does |
+|---|---|
+| `search_filings` | Dense FAISS retrieval over indexed SEC filings |
+| `extract_signals` | Structured JSON metric extraction (revenue, margins, EPS) |
+| `compare_companies` | Cross-company topic synthesis |
+| `get_price_data` | Historical returns via yfinance |
+| `backtest_sentiment` | Sentiment score → 30d return correlation |
+| `final_answer` | Synthesized response with citations |
+
+---
+
+## Resume bullet
+
+> Built **FinAgent** — an agentic RAG system over SEC 10-K/10-Q filings (FAISS + sentence-transformers + Groq); LLM agent dynamically plans and executes retrieval, signal extraction, and multi-company comparison; includes backtested NLP sentiment signals correlated against 30-day post-earnings returns. Deployed as Streamlit app on Hugging Face Spaces.

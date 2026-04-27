@@ -1,0 +1,26 @@
+GPUWatch Anomaly Detector — Classification Report
+============================================================
+
+── Current Throttle Detection ──
+              precision    recall  f1-score   support
+
+      Normal      1.000     0.980     0.990      3619
+  Throttling      0.298     1.000     0.459        31
+
+    accuracy                          0.980      3650
+   macro avg      0.649     0.990     0.725      3650
+weighted avg      0.994     0.980     0.985      3650
+
+── Predictive Performance (45s ahead) ──
+              precision    recall  f1-score   support
+
+      Normal      0.992     0.980     0.986      3592
+Pre-Throttle      0.298     0.534     0.383        58
+
+    accuracy                          0.973      3650
+   macro avg      0.645     0.757     0.684      3650
+weighted avg      0.981     0.973     0.976      3650
+
+Total rows evaluated: 3650
+Throttle events: 31
+Prediction horizon: 45 seconds
